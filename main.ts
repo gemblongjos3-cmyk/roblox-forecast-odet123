@@ -86,6 +86,16 @@ for (const id of ids) {
   }
   let trend = 0;
   if (playingValues.length >= 2) trend = clamp((playingValues[playingValues.length - 1] - playingValues[0]) / Math.max(1, Math.abs(playingValues[0])), -0.15, 0.15);
+  const lastRead = reads[lastIndex];
+  const detail = (lastRead.details || []).find((item) => item.universe_id === id);
+  const createdAt = detail && Date.parse(detail.created);
+  const ageHours = Number.isFinite(createdAt) ? (Date.parse(lastRead.at) - createdAt) / 3600000 : null;
+  const survival = ageHours === null ? 1 : clamp((672 - ageHours) / H, 0, 1);
+  const lastRow = (lastRead.up_and_coming || []).find((item) => item.universe_id === id);
+  const upVotes = lastRow && lastRow.up_votes;
+  const downVotes = lastRow && lastRow.down_votes;
+  const voteTotal = upVotes + downVotes;
+  const quality = Number.isFinite(upVotes) && Number.isFinite(downVotes) && voteTotal > 0 ? 0.9 + 0.2 * upVotes / voteTotal : 1;
   const trail = [];
   for (let i = 0; i < reads.length; i++) if (rankAt(i, id) <= 100) trail.push(i);
   const tail = trail.slice(-5);
@@ -100,7 +110,7 @@ for (const id of ids) {
     }
     if (d.length) placeDrift = 0.7 * pooledDrift + 0.3 * d.reduce((a, b) => a + b, 0) / d.length;
   }
-  candidates.push({ id, lastRank, varHr, trend, placeDrift });
+  candidates.push({ id, lastRank, varHr, trend, placeDrift, survival, quality });
 }
 const persistence = reads.length < 20 ? 0.90 : reads.length < 28 ? 0.82 : 0.985;
 const probabilities = [];
@@ -115,7 +125,7 @@ for (let k = 1; k <= places; k++) {
     const transit = Math.exp(-0.5 * ((k - predicted) / sigma) ** 2);
     const distance = Math.abs(k - game.lastRank);
     const local = k === game.lastRank ? 0.5 : distance === 1 ? 0.15 : 0;
-    const weight = persistence * local + (1 - persistence) * transit;
+    const weight = (persistence * local + (1 - persistence) * transit) * game.survival * game.quality;
     weights.push({ id: game.id, weight });
     weightSum += weight;
   }
