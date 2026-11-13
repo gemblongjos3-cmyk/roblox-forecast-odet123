@@ -1,13 +1,11 @@
-// Roblox Up-and-Coming forecast, round 3 (dev-feedback recalibration).
-// Round 2's recalibration (tighter newcomer share, sharper transit,
-// flatter stay kernel) improved rolling-origin backtests on the practice
-// archive but scored WORSE on the server practice instance (-40.0119 vs
-// round 1's -39.3076): the practice window rewards the opposite
-// calibration - more mass left unnamed for the grader to share, a wider
-// transit kernel, and a sharper stay kernel. Round 3 inverts round 2's
-// three changes past round 1's settings on the same architecture:
-// newcomer share floor/cap 0.24/0.45, transit width factor 0.60, stay
-// kernel 0.56 on the same place and 0.11 on each neighbour.
+// Roblox Up-and-Coming forecast, round 4 (single-knob test: transit width).
+// Rounds 2 and 3 moved all three calibration knobs together and both
+// scored worse on the server practice instance than round 1 (-40.0119
+// and -39.5048 vs -39.3076), so round 4 returns to round 1's settings
+// and changes only the transit kernel's width factor, 0.48 -> 0.60: of
+// the three, it was the purest fudge factor, and the hourly 72h grading
+// puts more weight on long-horizon occupancy than the sparse archive
+// reads the factor was originally tuned against.
 import fs from "node:fs";
 import path from "node:path";
 
@@ -57,7 +55,7 @@ for (let i = 1; i < reads.length; i++) {
 }
 const pooledDrift = driftSamples.length ? driftSamples.reduce((a, b) => a + b, 0) / driftSamples.length : 0;
 const pooledSD = varianceSamples.length ? Math.sqrt(varianceSamples.reduce((a, b) => a + b, 0) / varianceSamples.length) : 0;
-const newcomerShare = clamp(0.24 + 0.55 * entrantCount / Math.max(1, arrivalCount), 0.24, 0.45);
+const newcomerShare = clamp(0.16 + 0.55 * entrantCount / Math.max(1, arrivalCount), 0.16, 0.38);
 const lastIndex = reads.length - 1;
 const lastRanks = new Map();
 for (const id of ids) lastRanks.set(id, rankAt(lastIndex, id));
@@ -134,7 +132,7 @@ for (let k = 1; k <= places; k++) {
     const predicted = game.lastRank + (game.placeDrift - 0.12 * game.trend) * H;
     const transit = Math.exp(-0.5 * ((k - predicted) / sigma) ** 2);
     const distance = Math.abs(k - game.lastRank);
-    const local = k === game.lastRank ? 0.56 : distance === 1 ? 0.11 : 0;
+    const local = k === game.lastRank ? 0.5 : distance === 1 ? 0.15 : 0;
     const weight = (persistence * local + (1 - persistence) * transit) * game.survival * game.quality;
     weights.push({ id: game.id, weight });
     weightSum += weight;
