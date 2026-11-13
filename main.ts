@@ -1,3 +1,23 @@
+// Roblox Up-and-Coming forecast, round 2 (recalibration of round 1).
+// Same measured rank-transition architecture as round 1 - a persistence
+// kernel around the last rank blended with a drift-extrapolated Gaussian
+// transit kernel, per-game volatility shrunk toward the pooled estimate,
+// playing-trend tilt, age-out survival and vote quality. Round 1 scored
+// -39.3076 on the practice instance against the house model's -37.2; its
+// post-mortem (practice archive measurements + forecast inspection) found
+// three calibration defects, fixed here:
+//  1. The newcomer share ran as high as 0.38 of every place's mass, but
+//     the measured rate at which top-10 slots are taken by games outside
+//     the named set is far lower (0.3% of next-read slots come from off
+//     the previous chart entirely). The share is now floored/capped at
+//     0.08/0.22, returning mass to the named candidates.
+//  2. The transit kernel's width fudge (0.48) over-smoothed it; 0.38
+//     matches the measured rank-change dispersion better.
+//  3. The stay kernel (0.5 on the same place, 0.15 on each neighbour)
+//     was sharper than the chart's measured one-step motion; 0.44/0.19
+//     tracks it better.
+// All three changes were validated against rolling-origin backtests on
+// the practice history (tune.mjs) before submitting.
 import fs from "node:fs";
 import path from "node:path";
 
@@ -47,7 +67,7 @@ for (let i = 1; i < reads.length; i++) {
 }
 const pooledDrift = driftSamples.length ? driftSamples.reduce((a, b) => a + b, 0) / driftSamples.length : 0;
 const pooledSD = varianceSamples.length ? Math.sqrt(varianceSamples.reduce((a, b) => a + b, 0) / varianceSamples.length) : 0;
-const newcomerShare = clamp(0.16 + 0.55 * entrantCount / Math.max(1, arrivalCount), 0.16, 0.38);
+const newcomerShare = clamp(0.08 + 0.55 * entrantCount / Math.max(1, arrivalCount), 0.08, 0.22);
 const lastIndex = reads.length - 1;
 const lastRanks = new Map();
 for (const id of ids) lastRanks.set(id, rankAt(lastIndex, id));
@@ -120,11 +140,11 @@ for (let k = 1; k <= places; k++) {
   let weightSum = 0;
   for (const game of candidates) {
     const vol = Math.sqrt(game.varHr);
-    const sigma = Math.max(4, Math.sqrt((0.65 * pooledSD ** 2 + 0.35 * vol ** 2) * H) * 0.48 + 2);
+    const sigma = Math.max(4, Math.sqrt((0.65 * pooledSD ** 2 + 0.35 * vol ** 2) * H) * 0.38 + 2);
     const predicted = game.lastRank + (game.placeDrift - 0.12 * game.trend) * H;
     const transit = Math.exp(-0.5 * ((k - predicted) / sigma) ** 2);
     const distance = Math.abs(k - game.lastRank);
-    const local = k === game.lastRank ? 0.5 : distance === 1 ? 0.15 : 0;
+    const local = k === game.lastRank ? 0.44 : distance === 1 ? 0.19 : 0;
     const weight = (persistence * local + (1 - persistence) * transit) * game.survival * game.quality;
     weights.push({ id: game.id, weight });
     weightSum += weight;
